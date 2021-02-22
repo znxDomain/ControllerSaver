@@ -17,12 +17,16 @@ int main(int argc, char* argv[])
     time_t currentTime = 0;
     time_t previousTime = 0;
     time_t keyTime = 0;
-    bool canDisconnect = false;
+    bool canDisconnect = true;
     u32 timerSeconds = 30;
+
+    Result rc = timeGetCurrentTime(TimeType_UserSystemClock, (u64*)&keyTime);
+    if (R_FAILED(rc)) {
+        printf("timeGetCurrentTime failed with %x", rc);
+    }
 
     printf("ControllerSaver - Disconnect Controllers\n");
 
-    printf("Press A to disconnect controllers.\n");
     printf("Press + to exit.\n");
 
     // Main loop
@@ -35,15 +39,6 @@ int main(int argc, char* argv[])
 
         if (kDown & HidNpadButton_Plus)
             break; // break in order to return to hbmenu
-
-        if (kDown){
-            // Record timestamp of last input
-            Result rc = timeGetCurrentTime(TimeType_UserSystemClock, (u64*)&keyTime);
-            if (R_FAILED(rc)) {
-                printf("timeGetCurrentTime failed with %x", rc);
-            }
-            canDisconnect = true;
-        }
             
         Result rc = timeGetCurrentTime(TimeType_UserSystemClock, (u64*)&currentTime);
         if (R_FAILED(rc)) {
@@ -51,14 +46,18 @@ int main(int argc, char* argv[])
         }
         
         if (canDisconnect && (currentTime - keyTime) % 2){
-            printf("Time since last input: %ld\n", (currentTime - keyTime));
+            // printf("Time since last disconnect: %ld\n", (currentTime - keyTime));
             if (currentTime != previousTime){
-                // printf("Time since last input: %ld\n", (currentTime - keyTime));
+                printf("Time since last disconnect: %ld\n", (currentTime - keyTime));
             }
             previousTime = currentTime;
         }
 
         if (canDisconnect && currentTime - keyTime > timerSeconds){
+            Result rc = timeGetCurrentTime(TimeType_UserSystemClock, (u64*)&keyTime);
+            if (R_FAILED(rc)) {
+                printf("timeGetCurrentTime failed with %x", rc);
+            }
             printf("Disconnecting ALL Controllers:\n");
             // Just disconnect them all
             hidDisconnectNpad(HidNpadIdType_No1);
@@ -73,7 +72,7 @@ int main(int argc, char* argv[])
             hidDisconnectNpad(HidNpadIdType_Handheld);
             
             // Don't try again until we get more input
-            canDisconnect = false;
+            // canDisconnect = false;
             printf("Done.\n");
         }
 
