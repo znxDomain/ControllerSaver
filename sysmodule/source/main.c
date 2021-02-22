@@ -84,39 +84,32 @@ int main(int argc, char* argv[])
 
     // Configure our supported input layout: all players with standard controller styles
     padConfigureInput(8, HidNpadStyleSet_NpadStandard);
-
-    // Initialize the gamepad for reading all controllers
-    PadState pad;
-    padInitializeAny(&pad);
     
     time_t currentTime = 0;
     time_t keyTime = 0;
-    bool canDisconnect = true;
     u32 timerSeconds = 30;
+
+    Result rc = timeGetCurrentTime(TimeType_UserSystemClock, (u64*)&keyTime);
+    if (R_FAILED(rc)) {
+        fatalThrow(rc);
+    }
 
     // Main loop
     while (true)
     {
         svcSleepThread(1e+8L);
-        padUpdate(&pad);
-
-        u64 kDown = padGetButtonsDown(&pad);
-
-        if (kDown){
-            // Record timestamp of last input
-            Result rc = timeGetCurrentTime(TimeType_UserSystemClock, (u64*)&keyTime);
-            if (R_FAILED(rc)) {
-                fatalThrow(rc);
-            }
-            canDisconnect = true;
-        }
             
         Result rc = timeGetCurrentTime(TimeType_UserSystemClock, (u64*)&currentTime);
         if (R_FAILED(rc)) {
             fatalThrow(rc);
         }
 
-        if (canDisconnect && currentTime - keyTime > timerSeconds){
+        if (currentTime - keyTime > timerSeconds){
+            Result rc = timeGetCurrentTime(TimeType_UserSystemClock, (u64*)&keyTime);
+            if (R_FAILED(rc)) {
+                fatalThrow(rc);
+            }
+            
             // Just disconnect them all
             hidDisconnectNpad(HidNpadIdType_No1);
             hidDisconnectNpad(HidNpadIdType_No2);
@@ -128,9 +121,6 @@ int main(int argc, char* argv[])
             hidDisconnectNpad(HidNpadIdType_No8);
             hidDisconnectNpad(HidNpadIdType_Other);
             hidDisconnectNpad(HidNpadIdType_Handheld);
-            
-            // Don't try again until we get more input
-            canDisconnect = false;
         }
     }
     return 0;
