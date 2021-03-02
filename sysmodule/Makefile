@@ -42,6 +42,8 @@ BUILD		:=	build
 SOURCES		:=	source
 DATA		:=	data
 INCLUDES	:=	include
+OUTDIR 		:=  out
+APP_TITLEID :=  4200000AF1E8DA89
 #ROMFS	:=	romfs
 
 #---------------------------------------------------------------------------------
@@ -163,6 +165,11 @@ all: $(BUILD)
 $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
+
+	@mkdir -p $(OUTDIR)/$(APP_TITLEID)/flags
+	@cp $(TARGET).nsp $(OUTDIR)/$(APP_TITLEID)/exefs.nsp
+	@cp toolbox.json $(OUTDIR)/$(APP_TITLEID)/toolbox.json
+	@touch $(OUTDIR)/$(APP_TITLEID)/flags/boot2.flag
 
 #---------------------------------------------------------------------------------
 clean:

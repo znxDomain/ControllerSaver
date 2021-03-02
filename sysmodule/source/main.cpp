@@ -7,7 +7,8 @@
 // Include the main libnx system header, for Switch development
 #include <switch.h>
 
-#define ENABLE_LOGGING 1
+#define ENABLE_LOGGING 0
+static u32 timerSeconds = 1800;
 
 // Size of the inner heap (adjust as necessary).
 #define INNER_HEAP_SIZE 0x80000
@@ -59,6 +60,10 @@ void __appInit(void)
     if (R_FAILED(rc))
         fatalThrow(rc);
 
+    rc = btmInitialize();
+    if (R_FAILED(rc))
+        fatalThrow(rc);
+
     rc = timeInitialize();
     if (R_FAILED(rc))
         fatalThrow(rc);
@@ -75,10 +80,11 @@ void __appInit(void)
 // Service deinitialization.
 void __appExit(void)
 {
-    fsdevUnmountAll(); // Disable this if you don't want to use the SD card filesystem.
-    fsExit(); // Disable this if you don't want to use the filesystem.
-    timeExit(); // Enable this if you want to use time.
-    hidExit(); // Enable this if you want to use HID.
+    fsdevUnmountAll();
+    fsExit();
+    timeExit();
+    btmExit();
+    hidExit();
 }
 
 #ifdef __cplusplus
@@ -87,44 +93,52 @@ void __appExit(void)
 
 void LogLine(const char* fmt, ...)
 {
-
+#ifdef ENABLE_LOGGING
     stdout = stderr = fopen("/controllersaver.log", "a");
     va_list ap;
     va_start(ap, fmt);
     vprintf(fmt, ap);
     va_end(ap);
     fclose(stdout);
+#endif
 }
 
 // Main program entrypoint
 int main(int argc, char* argv[])
 {
     LogLine("Starting Sysmodule.\n");
-
-    // Configure our supported input layout: all players with standard controller styles
-    padConfigureInput(8, HidNpadStyleSet_NpadStandard);
-    PadState pad;
-    padInitializeAny(&pad);
-    padUpdate(&pad);
-    u64 kDown = padGetButtonsDown(&pad);
-    LogLine("Configured input.\n");
-
+    
     time_t currentTime = 0;
     time_t keyTime = 0;
-    u32 timerSeconds = 30;
+    Result rc;
 
-    Result rc = timeGetCurrentTime(TimeType_UserSystemClock, (u64*)&keyTime);
+    rc = timeGetCurrentTime(TimeType_UserSystemClock, (u64*)&keyTime);
     if (R_FAILED(rc)) {
         fatalThrow(rc);
     }
 
-    // Main loop
-    while (true)
-    {
+    static Event g_device_condition_event;
+    static BtmDeviceCondition g_device_condition = {};
+
+    rc = btmAcquireDeviceConditionEvent(&g_device_condition_event);
+    if (R_FAILED(rc)) {
+        LogLine("Error btmAcquireDeviceConditionEvent:%u - %X\n", rc, rc);
+    }
+
+    while(appletMainLoop()) {
+        
+        if (R_SUCCEEDED(eventWait(&g_device_condition_event, 1e9))) {
+            LogLine("btmGetDeviceCondition event triggered.\n");
+            rc = btmGetDeviceCondition(&g_device_condition);
+            if (R_FAILED(rc)) {
+                LogLine("Error btmGetDeviceCondition:%u - %X\n", rc, rc);
+            }
+        }
+
         // LogLine("Started Loop.\n");
         svcSleepThread(1e+8L);
             
-        Result rc = timeGetCurrentTime(TimeType_UserSystemClock, (u64*)&currentTime);
+        rc = timeGetCurrentTime(TimeType_UserSystemClock, (u64*)&currentTime);
         if (R_FAILED(rc)) {
             fatalThrow(rc);
         }
@@ -137,28 +151,17 @@ int main(int argc, char* argv[])
                 fatalThrow(rc);
             }
             LogLine("Disconnecting.\n");
+            
             // Just disconnect them all
-            Result rc1 = hidDisconnectNpad(HidNpadIdType_No1);
-            if (true || R_FAILED(rc1)) {
-                LogLine("Error HidNpadIdType_No1:%u - %X", rc1, rc1);
+            LogLine("Count:%u - %X", g_device_condition.v900.connected_count, g_device_condition.v900.connected_count);
+            for (int i = 0; i < g_device_condition.v900.connected_count; ++i) {
+                Result rc = btmHidDisconnect(g_device_condition.v900.devices[i].address);
+                LogLine("Discconnecting btmHidDisconnect Address:%u - %X\n", g_device_condition.v900.devices[i].address, g_device_condition.v900.devices[i].address);
+                if (R_FAILED(rc)) {
+                    LogLine("Error btmHidDisconnect:%u - %X\n", rc, rc);
+                }
             }
-            Result rc2 = hidDisconnectNpad(HidNpadIdType_No2);
-            if (true || R_FAILED(rc2)) {
-                LogLine("Error HidNpadIdType_No2:%u - %X", rc2, rc2);
-            }
-            Result rc3 = hidDisconnectNpad(HidNpadIdType_No3);
-            if (true || R_FAILED(rc3)) {
-                LogLine("Error HidNpadIdType_No3:%u - %X", rc3, rc3);
-            }
-            Result rc4 = hidDisconnectNpad(HidNpadIdType_Other);
-            if (true || R_FAILED(rc4)) {
-                LogLine("Error HidNpadIdType_Other:%u - %X", rc4, rc4);
-            }
-            Result rc6 = hidDisconnectNpad(HidNpadIdType_Handheld);
-            if (true || R_FAILED(rc6)) {
-                LogLine("Error HidNpadIdType_Handheld:%u - %X", rc6, rc6);
-            }
-            LogLine("Disconnected.\n");
+            LogLine("All Disconnected.\n");
         }
     }
     return 0;

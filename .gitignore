@@ -1,0 +1,12 @@
+
+build/
+
+*.ovl
+
+*.elf
+
+*.nacp
+
+*.nro
+
+.DS_Store
