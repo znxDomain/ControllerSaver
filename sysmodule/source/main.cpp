@@ -114,7 +114,7 @@ int main(int argc, char* argv[])
 
     rc = timeGetCurrentTime(TimeType_UserSystemClock, (u64*)&keyTime);
     if (R_FAILED(rc)) {
-        fatalThrow(rc);
+        LogLine("timeGetCurrentTime failed with %x\n", rc);
     }
 
     static Event g_device_condition_event;
@@ -124,9 +124,15 @@ int main(int argc, char* argv[])
     if (R_FAILED(rc)) {
         LogLine("Error btmAcquireDeviceConditionEvent:%u - %X\n", rc, rc);
     }
-
+    // Initialize the gamepad for reading all controllers
+    padConfigureInput(8, HidNpadStyleSet_NpadStandard);
+    PadState pad;
+    padInitializeAny(&pad);
+    
     while(appletMainLoop()) {
-        
+        // LogLine("Started Loop.\n");
+        svcSleepThread(1e+8L);
+
         if (R_SUCCEEDED(eventWait(&g_device_condition_event, 1e9))) {
             LogLine("btmGetDeviceCondition event triggered.\n");
             rc = btmGetDeviceCondition(&g_device_condition);
@@ -134,13 +140,21 @@ int main(int argc, char* argv[])
                 LogLine("Error btmGetDeviceCondition:%u - %X\n", rc, rc);
             }
         }
+        padUpdate(&pad);
+        u64 kDown = padGetButtonsDown(&pad);
 
-        // LogLine("Started Loop.\n");
-        svcSleepThread(1e+8L);
-            
         rc = timeGetCurrentTime(TimeType_UserSystemClock, (u64*)&currentTime);
         if (R_FAILED(rc)) {
-            fatalThrow(rc);
+            LogLine("timeGetCurrentTime failed with %x\n", rc);
+        }
+
+        if (kDown){
+            LogLine("Key Down at: %jd, %jd\n", (intmax_t)currentTime, currentTime - keyTime);
+            // Record timestamp of last input
+            rc = timeGetCurrentTime(TimeType_UserSystemClock, (u64*)&keyTime);
+            if (R_FAILED(rc)) {
+                LogLine("timeGetCurrentTime failed with %x\n", rc);
+            }
         }
 
         if (currentTime - keyTime > timerSeconds){

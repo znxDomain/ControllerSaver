@@ -1,0 +1,4 @@
+[submodule "libnx"]
+	path = libnx
+	url = https://github.com/ndeadly/libnx/
+	branch = bluetooth-additions
