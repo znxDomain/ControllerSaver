@@ -14,7 +14,7 @@
 #include <switch.h>
 
 #define ENABLE_LOGGING 1
-static u32 timerSeconds = 30;
+static u32 timerSeconds = 1800;
 
 // Size of the inner heap (adjust as necessary).
 #define INNER_HEAP_SIZE 0x80000
