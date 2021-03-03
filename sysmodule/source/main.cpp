@@ -3,12 +3,18 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <cerrno>
+
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <limits.h>
+
 
 // Include the main libnx system header, for Switch development
 #include <switch.h>
 
-#define ENABLE_LOGGING 0
-static u32 timerSeconds = 1800;
+#define ENABLE_LOGGING 1
+static u32 timerSeconds = 30;
 
 // Size of the inner heap (adjust as necessary).
 #define INNER_HEAP_SIZE 0x80000
@@ -91,10 +97,31 @@ void __appExit(void)
 }
 #endif
 
+int mkdirs(char *path, mode_t mode) {
+    char tmp_dir[PATH_MAX + 1];
+    tmp_dir[0] = '\0';
+
+    char path_dup[PATH_MAX + 1];
+    strncpy(path_dup, path, PATH_MAX);
+    path_dup[PATH_MAX] = '\0';
+
+    for (char *tmp_str = strtok(path_dup, "/"); tmp_str != NULL; tmp_str = strtok(NULL, "/")) {
+        strcat(tmp_dir, tmp_str);
+        strcat(tmp_dir, "/");
+        
+        int res = mkdir(tmp_dir, mode);
+        if (res != 0 && errno != EEXIST)
+            return res;
+    }
+
+    return 0;
+}
+
 void LogLine(const char* fmt, ...)
 {
 #ifdef ENABLE_LOGGING
-    stdout = stderr = fopen("/controllersaver.log", "a");
+    mkdirs("/config/controllersaver/", 777);
+    stdout = stderr = fopen("/config/controllersaver/controllersaver.log", "a");
     va_list ap;
     va_start(ap, fmt);
     vprintf(fmt, ap);
@@ -102,6 +129,26 @@ void LogLine(const char* fmt, ...)
     fclose(stdout);
 #endif
 }
+
+typedef struct {
+    BtdrvAddress address;
+    u8 pad[2];
+    u32 unk_x8;
+    char name[0x20];
+    u8 unk_x2c[0x1c];
+    u16 vid;
+    u16 pid;
+    u8 _unk2[0x20];
+} BtmConnectedDevice;
+
+typedef struct {
+    u32 unk_x0;
+    u8 unk_x4;
+    u8 unk_x5;
+    u8 max_count;
+    u8 connected_count;
+    BtmConnectedDevice devices[8];
+} BtmDeviceConditionV900;
 
 // Main program entrypoint
 int main(int argc, char* argv[])
@@ -119,7 +166,7 @@ int main(int argc, char* argv[])
 
     static Event g_device_condition_event;
     static BtmDeviceCondition g_device_condition = {};
-
+        
     rc = btmAcquireDeviceConditionEvent(&g_device_condition_event);
     if (R_FAILED(rc)) {
         LogLine("Error btmAcquireDeviceConditionEvent:%u - %X\n", rc, rc);
@@ -133,13 +180,6 @@ int main(int argc, char* argv[])
         // LogLine("Started Loop.\n");
         svcSleepThread(1e+8L);
 
-        if (R_SUCCEEDED(eventWait(&g_device_condition_event, 1e9))) {
-            LogLine("btmGetDeviceCondition event triggered.\n");
-            rc = btmGetDeviceCondition(&g_device_condition);
-            if (R_FAILED(rc)) {
-                LogLine("Error btmGetDeviceCondition:%u - %X\n", rc, rc);
-            }
-        }
         padUpdate(&pad);
         u64 kDown = padGetButtonsDown(&pad);
 
@@ -166,11 +206,18 @@ int main(int argc, char* argv[])
             }
             LogLine("Disconnecting.\n");
             
+            rc = btmGetDeviceCondition(&g_device_condition);
+            if (R_FAILED(rc)) {
+                LogLine("Error btmGetDeviceCondition:%u - %X\n", rc, rc);
+            }
+
+            BtmDeviceConditionV900* device_condition = reinterpret_cast<BtmDeviceConditionV900*>(&g_device_condition);
+
             // Just disconnect them all
-            LogLine("Count:%u - %X", g_device_condition.v900.connected_count, g_device_condition.v900.connected_count);
-            for (int i = 0; i < g_device_condition.v900.connected_count; ++i) {
-                Result rc = btmHidDisconnect(g_device_condition.v900.devices[i].address);
-                LogLine("Discconnecting btmHidDisconnect Address:%u - %X\n", g_device_condition.v900.devices[i].address, g_device_condition.v900.devices[i].address);
+            LogLine("Count:%u - %X\n", device_condition->connected_count, device_condition->connected_count);
+            for (int i = 0; i < device_condition->connected_count; ++i) {
+                Result rc = btmHidDisconnect(device_condition->devices[i].address);
+                LogLine("Discconnecting btmHidDisconnect Address:%u - %X\n", device_condition->devices[i].address, device_condition->devices[i].address);
                 if (R_FAILED(rc)) {
                     LogLine("Error btmHidDisconnect:%u - %X\n", rc, rc);
                 }

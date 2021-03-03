@@ -37,14 +37,14 @@ include $(DEVKITPRO)/libnx/switch_rules
 #   of a homebrew executable (.nro). This is intended to be used for sysmodules.
 #   NACP building is skipped as well.
 #---------------------------------------------------------------------------------
-TARGET		:=	$(notdir $(CURDIR))
+TARGET		:=	controllersaver
 BUILD		:=	build
 SOURCES		:=	source
 DATA		:=	data
 INCLUDES	:=	include
-OUTDIR 		:=  out
-APP_TITLEID :=  4200000AF1E8DA89
-#ROMFS	:=	romfs
+OUTBASE		:=	out
+OUTDIR		:=  $(OUTBASE)/atmosphere/contents
+APP_TITLEID	:=	4200000AF1E8DA89
 
 #---------------------------------------------------------------------------------
 # options for code generation
@@ -170,6 +170,7 @@ $(BUILD):
 	@cp $(TARGET).nsp $(OUTDIR)/$(APP_TITLEID)/exefs.nsp
 	@cp toolbox.json $(OUTDIR)/$(APP_TITLEID)/toolbox.json
 	@touch $(OUTDIR)/$(APP_TITLEID)/flags/boot2.flag
+	@cd $(OUTBASE); zip -r $(TARGET).zip atmosphere
 
 #---------------------------------------------------------------------------------
 clean:
@@ -177,7 +178,7 @@ clean:
 ifeq ($(strip $(APP_JSON)),)
 	@rm -fr $(BUILD) $(TARGET).nro $(TARGET).nacp $(TARGET).elf
 else
-	@rm -fr $(BUILD) $(TARGET).nsp $(TARGET).nso $(TARGET).npdm $(TARGET).elf
+	@rm -rf $(BUILD) $(OUTBASE) $(TARGET).nsp $(TARGET).nso $(TARGET).npdm $(TARGET).elf
 endif
 
 
