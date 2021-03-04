@@ -14,9 +14,7 @@
 #include <switch.h>
 
 #define ENABLE_LOGGING 1
-static u32 timerSeconds = 1800;
-
-// Size of the inner heap (adjust as necessary).
+#define IDLE_TIMEOUT_SECONDS 30*60      // min * seconds
 #define INNER_HEAP_SIZE 0x80000
 
 #ifdef __cplusplus
@@ -70,10 +68,6 @@ void __appInit(void)
     if (R_FAILED(rc))
         fatalThrow(rc);
 
-    rc = timeInitialize();
-    if (R_FAILED(rc))
-        fatalThrow(rc);
-
     rc = fsInitialize();
     if (R_FAILED(rc))
         diagAbortWithResult(MAKERESULT(Module_Libnx, LibnxError_InitFail_FS));
@@ -88,7 +82,7 @@ void __appExit(void)
 {
     fsdevUnmountAll();
     fsExit();
-    timeExit();
+    // timeExit();
     btmExit();
     hidExit();
 }
@@ -120,7 +114,7 @@ int mkdirs(char *path, mode_t mode) {
 void LogLine(const char* fmt, ...)
 {
 #ifdef ENABLE_LOGGING
-    mkdirs("/config/controllersaver/", 777);
+    mkdirs((char*)"/config/controllersaver/", 777);
     stdout = stderr = fopen("/config/controllersaver/controllersaver.log", "a");
     va_list ap;
     va_start(ap, fmt);
@@ -155,14 +149,14 @@ int main(int argc, char* argv[])
 {
     LogLine("Starting Sysmodule.\n");
     
-    time_t currentTime = 0;
-    time_t keyTime = 0;
+    u64 keyTick = 0;
+    u64 currentTick = 0;
     Result rc;
+    
+    u64 timerTicks = armNsToTicks(IDLE_TIMEOUT_SECONDS * 1'000'000'000ULL);
 
-    rc = timeGetCurrentTime(TimeType_UserSystemClock, (u64*)&keyTime);
-    if (R_FAILED(rc)) {
-        LogLine("timeGetCurrentTime failed with %x\n", rc);
-    }
+    currentTick = armGetSystemTick();
+    keyTick = armGetSystemTick();
 
     static Event g_device_condition_event;
     static BtmDeviceCondition g_device_condition = {};
@@ -176,34 +170,26 @@ int main(int argc, char* argv[])
     PadState pad;
     padInitializeAny(&pad);
     
-    while(appletMainLoop()) {
+    while(true) {
         // LogLine("Started Loop.\n");
         svcSleepThread(1e+8L);
 
         padUpdate(&pad);
         u64 kDown = padGetButtonsDown(&pad);
 
-        rc = timeGetCurrentTime(TimeType_UserSystemClock, (u64*)&currentTime);
-        if (R_FAILED(rc)) {
-            LogLine("timeGetCurrentTime failed with %x\n", rc);
-        }
+        currentTick = armGetSystemTick();
 
         if (kDown){
-            LogLine("Key Down at: %jd, %jd\n", (intmax_t)currentTime, currentTime - keyTime);
+            LogLine("Key Down at: %llu, %llu\n", currentTick, currentTick - keyTick);
             // Record timestamp of last input
-            rc = timeGetCurrentTime(TimeType_UserSystemClock, (u64*)&keyTime);
-            if (R_FAILED(rc)) {
-                LogLine("timeGetCurrentTime failed with %x\n", rc);
-            }
+            keyTick = armGetSystemTick();
+            continue;
         }
-
-        if (currentTime - keyTime > timerSeconds){
-            LogLine("Timer Met: %jd\n", (intmax_t)currentTime);
-
-            Result rc = timeGetCurrentTime(TimeType_UserSystemClock, (u64*)&keyTime);
-            if (R_FAILED(rc)) {
-                fatalThrow(rc);
-            }
+        
+        if (currentTick - keyTick > timerTicks){
+            LogLine("Timer Met: %llu, %llu, %llu\n", currentTick, keyTick, timerTicks);
+            keyTick = armGetSystemTick();
+            
             LogLine("Disconnecting.\n");
             
             rc = btmGetDeviceCondition(&g_device_condition);
