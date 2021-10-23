@@ -124,26 +124,6 @@ void LogLine(const char* fmt, ...)
 #endif
 }
 
-typedef struct {
-    BtdrvAddress address;
-    u8 pad[2];
-    u32 unk_x8;
-    char name[0x20];
-    u8 unk_x2c[0x1c];
-    u16 vid;
-    u16 pid;
-    u8 _unk2[0x20];
-} BtmConnectedDevice;
-
-typedef struct {
-    u32 unk_x0;
-    u8 unk_x4;
-    u8 unk_x5;
-    u8 max_count;
-    u8 connected_count;
-    BtmConnectedDevice devices[8];
-} BtmDeviceConditionV900;
-
 // Main program entrypoint
 int main(int argc, char* argv[])
 {
@@ -159,8 +139,9 @@ int main(int argc, char* argv[])
     keyTick = armGetSystemTick();
 
     static Event g_device_condition_event;
-    static BtmDeviceCondition g_device_condition = {};
-        
+    static s32 g_connected_count = 0;
+    static BtdrvAddress g_addresses[8] = {};
+
     rc = btmAcquireDeviceConditionEvent(&g_device_condition_event);
     if (R_FAILED(rc)) {
         LogLine("Error btmAcquireDeviceConditionEvent:%u - %X\n", rc, rc);
@@ -191,24 +172,67 @@ int main(int argc, char* argv[])
             keyTick = armGetSystemTick();
             
             LogLine("Disconnecting.\n");
-            
-            rc = btmGetDeviceCondition(&g_device_condition);
-            if (R_FAILED(rc)) {
-                LogLine("Error btmGetDeviceCondition:%u - %X\n", rc, rc);
-            }
 
-            BtmDeviceConditionV900* device_condition = reinterpret_cast<BtmDeviceConditionV900*>(&g_device_condition);
+            if (hosversionAtLeast(13,0,0)) {
+                BtmConnectedDeviceV13 connected_devices[8];
+                rc = btmGetDeviceCondition(BtmProfile_None, connected_devices, 8, &g_connected_count);
 
-            // Just disconnect them all
-            LogLine("Count:%u - %X\n", device_condition->connected_count, device_condition->connected_count);
-            for (int i = 0; i < device_condition->connected_count; ++i) {
-                Result rc = btmHidDisconnect(device_condition->devices[i].address);
-                LogLine("Discconnecting btmHidDisconnect Address:%u - %X\n", device_condition->devices[i].address, device_condition->devices[i].address);
                 if (R_FAILED(rc)) {
-                    LogLine("Error btmHidDisconnect:%u - %X\n", rc, rc);
+                    LogLine("Error btmGetDeviceCondition:%u - %X\n", rc, rc);
+                }
+                else {
+                    for (s32 i = 0; i != g_connected_count; ++i) {
+                        g_addresses[i] = connected_devices[i].address;
+                    }
                 }
             }
-            LogLine("All Disconnected.\n");
+            else {
+                BtmDeviceCondition g_device_condition;
+                rc = btmLegacyGetDeviceCondition(&g_device_condition);
+
+                if (R_FAILED(rc)) {
+                    LogLine("Error btmLegacyGetDeviceCondition:%u - %X\n", rc, rc);
+                }
+                else {
+                    if (hosversionAtLeast(9,0,0)) {
+                        g_connected_count = g_device_condition.v900.connected_count;
+                        for (s32 i = 0; i != g_connected_count; ++i) {
+                            g_addresses[i] = g_device_condition.v900.devices[i].address;
+                        }
+                    }
+                    else if (hosversionAtLeast(8,0,0)) {
+                        g_connected_count = g_device_condition.v800.connected_count;
+                        for (s32 i = 0; i != g_connected_count; ++i) {
+                            g_addresses[i] = g_device_condition.v800.devices[i].address;
+                        }
+                    }
+                    else if (hosversionAtLeast(5,1,0)) {
+                        g_connected_count = g_device_condition.v510.connected_count;
+                        for (s32 i = 0; i != g_connected_count; ++i) {
+                            g_addresses[i] = g_device_condition.v510.devices[i].address;
+                        }
+                    }
+                    else {
+                        g_connected_count = g_device_condition.v100.connected_count;
+                        for (s32 i = 0; i != g_connected_count; ++i) {
+                            g_addresses[i] = g_device_condition.v100.devices[i].address;
+                        }
+                    }
+                }
+            }
+
+            if (R_SUCCEEDED(rc)) {
+                // Just disconnect them all
+                LogLine("Count:%u - %X\n", g_connected_count, g_connected_count);
+                for (int i = 0; i != g_connected_count; ++i) {
+                    Result rc = btmHidDisconnect(g_addresses[i]);
+                    LogLine("Discconnecting btmHidDisconnect Address:%u - %X\n", g_addresses[i], g_addresses[i]);
+                    if (R_FAILED(rc)) {
+                        LogLine("Error btmHidDisconnect:%u - %X\n", rc, rc);
+                    }
+                }
+                LogLine("All Disconnected.\n");
+            }
         }
     }
     return 0;
